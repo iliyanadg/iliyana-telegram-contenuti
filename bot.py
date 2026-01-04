@@ -28,45 +28,102 @@ if ADMIN_ID == 0:
 if not WEBHOOK_URL:
     raise RuntimeError("WEBHOOK_URL mancante nelle env.")
 
-# ✅ VIP: prezzo 4€
+# PayPal links
 PAYPAL_VIP_URL = "https://www.paypal.com/paypalme/iliyanadg/4"
+PAYPAL_CONTENT_URL = "https://www.paypal.com/paypalme/iliyanadg"  # importo variabile
+
+# ---------------- TESTI ----------------
+WELCOME_TEXT = (
+    "Hey… sei arrivato nel posto giusto 😈\n"
+    "Adesso scegli bene 😽\n\n"
+    "🔒 Vuoi un contenuto?\n"
+    "💎 Vuoi il VIP e parlare direttamente con me?\n\n"
+    "Scegli qui sotto 👇"
+)
 
 PRICING_TEXT = (
+    "🔒 ACQUISTA CONTENUTI\n\n"
     "💰 Prezzi\n"
-    "• Foto singola: 5€\n"
-    "• Set 5 foto: 15€\n"
-    "• Video breve (1–2 min): 20€\n"
-    "• Video lungo / bundle: da 30€\n\n"
-    "📌 Scrivi cosa desideri (o manda direttamente foto/video/audio come riferimento)."
+    "📸 Foto singola — 5€\n"
+    "🖼️ Set 5 foto — 15€\n"
+    "🎥 Video breve (1–2 min) — 20€\n"
+    "🔥 Video lungo / Bundle — da 30€\n\n"
+    "Come funziona:\n"
+    "1) ✍️ Scrivimi cosa vuoi\n"
+    "2) 💳 Ti mando il totale / procedi al pagamento\n"
+    "3) 📎 Inviami la ricevuta e ti consegno ✅"
 )
 
 VIP_TEXT = (
-    "VIP ACCESS 💎\n\n"
-    "Il VIP Access è uno spazio più intimo e riservato:\n\n"
-    "✔️ contatto diretto con me tramite messaggi e audio\n"
-    "✔️ contenuti a pagamento\n"
-    "✔️ possibilità di richiedere contenuti personalizzati a pagamento\n"
-    "✔️ accesso anche ai contenuti che pubblico su OnlyFans\n\n"
-    "Prezzo: €4 / mese\n\n"
-    "Dopo il pagamento riceverai il mio contatto diretto\n"
-    "e potrai scrivermi privatamente.\n\n"
-    "Procedi dal link qui sotto, inserendo la causale \"abbonamento\" 👇"
+    "💎 VIP ACCESS\n\n"
+    "Uno spazio più intimo e riservato:\n"
+    "✅ contatto diretto con me (messaggi + audio)\n"
+    "✅ contenuti a pagamento\n"
+    "✅ richieste personalizzate (a pagamento)\n"
+    "✅ accesso anche ai contenuti che pubblico su OnlyFans\n\n"
+    "💶 Prezzo: 4€ / mese\n\n"
+    "📌 Causale obbligatoria:\n"
+    "👉 abbonamento + il tuo @username Telegram\n"
+    "(se non hai username: abbonamento + tuo nome)\n\n"
+    "Procedi dal link qui sotto 👇"
+)
+
+VIP_AFTER_PAID_TEXT = (
+    "✅ Perfetto.\n\n"
+    "Per velocizzare, inviami adesso la ricevuta del pagamento 📎\n"
+    "Puoi mandare uno screenshot o un PDF.\n\n"
+    "Appena confermo, riceverai qui il mio contatto diretto 💎"
 )
 
 WELCOME_VIP_TEXT = (
     "💎 Benvenuto nel VIP Access\n\n"
     "Da ora puoi scrivermi direttamente qui:\n"
     f"👉 {MY_CONTACT}\n\n"
-    "Accesso valido 30 giorni."
+    "⏳ Accesso valido 30 giorni.\n"
+    "Scrivimi pure cosa vuoi fare 😽"
+)
+
+VIP_REJECT_TEXT = (
+    "⚠️ Non riesco a trovare il pagamento.\n\n"
+    "Ricontrolla per favore:\n"
+    "1) importo corretto (4€)\n"
+    "2) pagamento su PayPal risultante *Completato*\n"
+    "3) causale: abbonamento + @tuousername\n\n"
+    "📎 Inviami la ricevuta (screenshot o PDF) e controllo subito ✅"
+)
+
+BUY_REJECT_TEXT = (
+    "⚠️ Non riesco a verificare il pagamento.\n\n"
+    "Controlla che sia *Completato* e che l’importo sia corretto.\n"
+    "📎 Inviami la ricevuta (screenshot o PDF) e risolviamo subito ✅"
+)
+
+BUY_CONFIRM_TEXT = (
+    "✅ Pagamento confermato.\n\n"
+    "Perfetto, preparo il contenuto e te lo invio qui 💋"
 )
 
 # ---------------- UI ----------------
 def main_menu():
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("ACQUISTA CONTENUTI 🔒", callback_data="buy")],
         [InlineKeyboardButton("VIP ACCESS 💎", callback_data="vip")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
+
+def buy_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 PAGA", url=PAYPAL_CONTENT_URL)],
+        [InlineKeyboardButton("📎 INVIA RICEVUTA", callback_data="buy_receipt")],
+        [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
+    ])
+
+def vip_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 PAGA VIP", url=PAYPAL_VIP_URL)],
+        [InlineKeyboardButton("✅ HO PAGATO", callback_data="vip_paid")],
+        [InlineKeyboardButton("📎 INVIA RICEVUTA", callback_data="vip_receipt")],
+        [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
+    ])
 
 def user_after_request_menu():
     return InlineKeyboardMarkup([
@@ -75,99 +132,130 @@ def user_after_request_menu():
         [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
     ])
 
-def admin_actions_menu(chat_id: int):
-    # ✅ QUI: bottoni admin (target + conferma/rifiuta pagamento)
+def admin_target_menu(chat_id: int):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎯 Imposta target", callback_data=f"settarget:{chat_id}")],
+        [InlineKeyboardButton("🎯 IMPOSTA TARGET", callback_data=f"settarget:{chat_id}")],
+        [InlineKeyboardButton("❌ ANNULLA TARGET", callback_data="unsettarget")],
+    ])
+
+def admin_vip_actions(chat_id: int):
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ CONFERMA PAGAMENTO", callback_data=f"vip_confirm:{chat_id}")],
-        [InlineKeyboardButton("❌ RIFIUTA / NON TROVO PAGAMENTO", callback_data=f"vip_reject:{chat_id}")],
-        [InlineKeyboardButton("❌ Annulla target", callback_data="unsettarget")],
+        [InlineKeyboardButton("❌ NON TROVO PAGAMENTO", callback_data=f"vip_reject:{chat_id}")],
+        [InlineKeyboardButton("🎯 IMPOSTA TARGET", callback_data=f"settarget:{chat_id}")],
+        [InlineKeyboardButton("❌ ANNULLA TARGET", callback_data="unsettarget")],
+    ])
+
+def admin_buy_actions(chat_id: int):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ PAGAMENTO OK", callback_data=f"buy_confirm:{chat_id}")],
+        [InlineKeyboardButton("❌ NON TROVO PAGAMENTO", callback_data=f"buy_reject:{chat_id}")],
+        [InlineKeyboardButton("🎯 IMPOSTA TARGET", callback_data=f"settarget:{chat_id}")],
+        [InlineKeyboardButton("❌ ANNULLA TARGET", callback_data="unsettarget")],
     ])
 
 # ---------------- HELPERS ----------------
-def format_user_line(user) -> str:
-    # Niente parentesi antiestetiche: se non c'è username, non lo scriviamo.
+def format_user_block(user) -> str:
     name = " ".join([x for x in [user.first_name, user.last_name] if x]).strip()
     uname = f"@{user.username}" if user.username else ""
     if uname:
         return f"👤 {name}\n🔗 {uname}"
     return f"👤 {name}"
 
-# ---------------- BOT HANDLERS ----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome = (
-        "╭──────────────╮\n"
-        "   ✨  MENU PRIVATO  ✨\n"
-        "╰──────────────╯\n\n"
-        "Hey… sei arrivato nel posto giusto 😈\n"
-        "Adesso scegli bene 😽\n\n"
-        "🔒  Vuoi un contenuto?\n"
-        "💎  Vuoi il VIP e parlare direttamente con me?\n\n"
-        "👇 Scegli qui sotto"
-    )
+def get_user_tag_for_causale(user) -> str:
+    return f"@{user.username}" if user.username else "(nessun username)"
 
-    await update.message.reply_text(
-        welcome,
-        reply_markup=main_menu()
-    )
+# ---------------- HANDLERS ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(WELCOME_TEXT, reply_markup=main_menu())
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
-    # -------- USER FLOWS --------
+    # -------- MENU USER --------
     if data == "buy":
-        await query.edit_message_text(
-            f"ACQUISTA CONTENUTI 🔒\n\n{PRICING_TEXT}\n\n✍️ Scrivi ora la tua richiesta."
-        )
+        # entri in modalità richiesta + possibilità ricevuta
         context.user_data["awaiting_request"] = True
         context.user_data["request_mode"] = "new"
+        context.user_data.pop("awaiting_vip_receipt", None)
+        context.user_data.pop("awaiting_buy_receipt", None)
+
+        await query.edit_message_text(PRICING_TEXT, reply_markup=buy_menu())
 
     elif data == "add_details":
-        await query.edit_message_text(
-            "➕ Aggiungi dettagli\n\nScrivi qui ulteriori dettagli (es. durata, preferenze, urgenza)."
-        )
         context.user_data["awaiting_request"] = True
         context.user_data["request_mode"] = "details"
-
-    elif data == "vip":
         await query.edit_message_text(
-            VIP_TEXT,
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("💳 PAGA VIP", url=PAYPAL_VIP_URL)],
-                    [InlineKeyboardButton("✅ HO PAGATO", callback_data="vip_paid")],
-                    [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
-                ]
-            ),
+            "➕ Aggiungi dettagli\n\nScrivi qui ulteriori dettagli (durata, preferenze, urgenza, ecc.)."
         )
 
+    elif data == "vip":
+        # mostra VIP + causale con username
+        user = query.from_user
+        vip_text_with_causale = VIP_TEXT.replace(
+            "👉 abbonamento + il tuo @username Telegram",
+            f"👉 abbonamento {get_user_tag_for_causale(user)}"
+        )
+
+        context.user_data.pop("awaiting_request", None)
+        context.user_data.pop("awaiting_buy_receipt", None)
+        context.user_data.pop("awaiting_vip_receipt", None)
+
+        await query.edit_message_text(vip_text_with_causale, reply_markup=vip_menu())
+
     elif data == "vip_paid":
+        # l'utente dichiara pagamento: chiediamo ricevuta e notifichiamo admin
         user = query.from_user
         chat_id = query.message.chat_id
+
+        context.user_data["awaiting_vip_receipt"] = True
+        context.user_data.pop("awaiting_buy_receipt", None)
+        context.user_data.pop("awaiting_request", None)
 
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=(
-                "💎 RICHIESTA VIP (ha premuto HO PAGATO)\n"
-                f"{format_user_line(user)}\n"
+                "💎 VIP — UTENTE HA PREMUTO “HO PAGATO”\n\n"
+                f"{format_user_block(user)}\n"
                 f"🆔 Chat ID: {chat_id}\n\n"
-                "Controlla PayPal: se trovi il pagamento premi ✅ CONFERMA PAGAMENTO.\n"
-                "Se non lo trovi premi ❌ RIFIUTA."
+                "👉 Se arriva la ricevuta, te la inoltro qui.\n"
+                "Quando trovi il pagamento su PayPal: ✅ CONFERMA.\n"
+                "Se non lo trovi: ❌ NON TROVO."
             ),
-            reply_markup=admin_actions_menu(chat_id)
+            reply_markup=admin_vip_actions(chat_id)
         )
 
+        await query.edit_message_text(VIP_AFTER_PAID_TEXT)
+
+    elif data == "vip_receipt":
+        # forza modalità invio ricevuta VIP
+        context.user_data["awaiting_vip_receipt"] = True
+        context.user_data.pop("awaiting_buy_receipt", None)
+        context.user_data.pop("awaiting_request", None)
+
         await query.edit_message_text(
-            "✅ Perfetto.\n\nHo ricevuto la tua richiesta VIP.\n"
-            "Appena confermo il pagamento, riceverai qui il contatto diretto 💎"
+            "📎 INVIA RICEVUTA VIP\n\n"
+            "Mandami ora uno screenshot o un PDF del pagamento PayPal.\n"
+            "Assicurati che si vedano: importo, data e stato *Completato* ✅"
+        )
+
+    elif data == "buy_receipt":
+        # forza modalità invio ricevuta ACQUISTO
+        context.user_data["awaiting_buy_receipt"] = True
+        context.user_data.pop("awaiting_vip_receipt", None)
+
+        await query.edit_message_text(
+            "📎 INVIA RICEVUTA (CONTENUTI)\n\n"
+            "Mandami ora uno screenshot o un PDF del pagamento.\n"
+            "Assicurati che si vedano: importo, data e stato *Completato* ✅"
         )
 
     elif data == "back":
-        await query.edit_message_text("Scegli cosa vuoi fare:", reply_markup=main_menu())
+        await query.edit_message_text(WELCOME_TEXT, reply_markup=main_menu())
 
-    # -------- ADMIN ACTIONS (INLINE) --------
+    # -------- AZIONI ADMIN --------
     elif data.startswith("settarget:"):
         if query.from_user.id != ADMIN_ID:
             return
@@ -189,33 +277,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.from_user.id != ADMIN_ID:
             return
         target_chat = int(data.split(":", 1)[1])
-
-        await context.bot.send_message(
-            chat_id=target_chat,
-            text=WELCOME_VIP_TEXT
-        )
-
-        await query.message.reply_text(
-            f"✅ Pagamento confermato. Ho inviato il benvenuto VIP a: {target_chat}"
-        )
+        await context.bot.send_message(chat_id=target_chat, text=WELCOME_VIP_TEXT)
+        await query.message.reply_text(f"✅ VIP confermato e benvenuto inviato a: {target_chat}")
 
     elif data.startswith("vip_reject:"):
         if query.from_user.id != ADMIN_ID:
             return
         target_chat = int(data.split(":", 1)[1])
+        await context.bot.send_message(chat_id=target_chat, text=VIP_REJECT_TEXT)
+        await query.message.reply_text(f"❌ Ho inviato richiesta verifica VIP a: {target_chat}")
 
-        await context.bot.send_message(
-            chat_id=target_chat,
-            text=(
-                "⚠️ Non riesco a trovare il pagamento.\n\n"
-                "Per favore ricontrolla di aver pagato correttamente su PayPal con causale \"abbonamento\".\n"
-                "Se hai pagato, mandami uno screenshot della ricevuta qui in chat e lo verifico subito ✅"
-            )
-        )
+    elif data.startswith("buy_confirm:"):
+        if query.from_user.id != ADMIN_ID:
+            return
+        target_chat = int(data.split(":", 1)[1])
+        await context.bot.send_message(chat_id=target_chat, text=BUY_CONFIRM_TEXT)
+        await query.message.reply_text(f"✅ Conferma pagamento contenuti inviata a: {target_chat}")
 
-        await query.message.reply_text(
-            f"❌ Ho inviato la richiesta di verifica (pagamento non trovato) a: {target_chat}"
-        )
+    elif data.startswith("buy_reject:"):
+        if query.from_user.id != ADMIN_ID:
+            return
+        target_chat = int(data.split(":", 1)[1])
+        await context.bot.send_message(chat_id=target_chat, text=BUY_REJECT_TEXT)
+        await query.message.reply_text(f"❌ Ho inviato richiesta verifica pagamento contenuti a: {target_chat}")
 
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -223,17 +307,14 @@ async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("admin_target_chat", None)
     await update.message.reply_text("✅ Target annullato.")
 
+# ---------------- ADMIN OUTGOING (target) ----------------
 async def admin_outgoing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Se sei ADMIN e hai un target impostato:
-    - inoltra testo o media all'utente target
-    """
     if update.effective_user.id != ADMIN_ID:
         return
 
     target_chat = context.user_data.get("admin_target_chat")
     if not target_chat:
-        await update.message.reply_text("⚠️ Nessun target impostato. Premi 🎯 Imposta target su una richiesta.")
+        await update.message.reply_text("⚠️ Nessun target impostato. Premi 🎯 IMPOSTA TARGET su una richiesta.")
         return
 
     await context.bot.copy_message(
@@ -243,10 +324,8 @@ async def admin_outgoing_handler(update: Update, context: ContextTypes.DEFAULT_T
     )
     await update.message.reply_text("✅ Inviato all’utente.")
 
+# ---------------- USER REQUEST (testo) ----------------
 async def user_request_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Testo dell'utente quando sta facendo una richiesta.
-    """
     if not context.user_data.get("awaiting_request"):
         return
 
@@ -260,54 +339,110 @@ async def user_request_text_handler(update: Update, context: ContextTypes.DEFAUL
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=(
-            f"{header}\n"
-            f"{format_user_line(user)}\n"
+            f"{header}\n\n"
+            f"{format_user_block(user)}\n"
             f"🆔 Chat ID: {chat_id}\n\n"
             f"📝 Testo:\n{update.message.text}"
         ),
-        reply_markup=admin_actions_menu(chat_id)
+        reply_markup=admin_buy_actions(chat_id)
     )
 
     await update.message.reply_text(
-        "✅ Richiesta inviata.\nRiceverai qui le informazioni per procedere.",
+        "✅ Richiesta inviata.\nRiceverai qui le info per procedere.",
         reply_markup=user_after_request_menu()
     )
 
-async def user_request_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Media dell'utente (foto/video/audio/documento) come richiesta.
-    La inoltriamo all'admin con chat_id.
-    """
-    if not context.user_data.get("awaiting_request"):
-        return
-
-    context.user_data["awaiting_request"] = False
-    mode = context.user_data.get("request_mode", "new")
-
+# ---------------- USER MEDIA (richiesta o ricevuta) ----------------
+async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_id = update.effective_chat.id
-    header = "📩 NUOVA RICHIESTA CONTENUTO (MEDIA)" if mode == "new" else "➕ DETTAGLI AGGIUNTIVI (MEDIA)"
 
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=(
-            f"{header}\n"
-            f"{format_user_line(user)}\n"
-            f"🆔 Chat ID: {chat_id}\n\n"
-            "📎 Ti ha mandato un media (copiato qui sotto)."
-        ),
-        reply_markup=admin_actions_menu(chat_id)
-    )
+    # 1) Ricevuta VIP
+    if context.user_data.get("awaiting_vip_receipt"):
+        context.user_data["awaiting_vip_receipt"] = False
 
-    await context.bot.copy_message(
-        chat_id=ADMIN_ID,
-        from_chat_id=update.effective_chat.id,
-        message_id=update.message.message_id
-    )
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "📎 RICEVUTA VIP RICEVUTA\n\n"
+                f"{format_user_block(user)}\n"
+                f"🆔 Chat ID: {chat_id}\n\n"
+                "Controlla PayPal e poi:\n"
+                "✅ CONFERMA PAGAMENTO / ❌ NON TROVO PAGAMENTO"
+            ),
+            reply_markup=admin_vip_actions(chat_id)
+        )
 
+        await context.bot.copy_message(
+            chat_id=ADMIN_ID,
+            from_chat_id=update.effective_chat.id,
+            message_id=update.message.message_id
+        )
+
+        await update.message.reply_text(
+            "✅ Ricevuta ricevuta.\nSto verificando e ti confermo appena possibile 💎"
+        )
+        return
+
+    # 2) Ricevuta acquisto contenuti
+    if context.user_data.get("awaiting_buy_receipt"):
+        context.user_data["awaiting_buy_receipt"] = False
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "📎 RICEVUTA (CONTENUTI) RICEVUTA\n\n"
+                f"{format_user_block(user)}\n"
+                f"🆔 Chat ID: {chat_id}"
+            ),
+            reply_markup=admin_buy_actions(chat_id)
+        )
+
+        await context.bot.copy_message(
+            chat_id=ADMIN_ID,
+            from_chat_id=update.effective_chat.id,
+            message_id=update.message.message_id
+        )
+
+        await update.message.reply_text(
+            "✅ Ricevuta ricevuta.\nPerfetto, controllo e ti rispondo qui 🔒"
+        )
+        return
+
+    # 3) Media come richiesta contenuto (se awaiting_request)
+    if context.user_data.get("awaiting_request"):
+        context.user_data["awaiting_request"] = False
+        mode = context.user_data.get("request_mode", "new")
+        header = "📩 NUOVA RICHIESTA (MEDIA)" if mode == "new" else "➕ DETTAGLI (MEDIA)"
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                f"{header}\n\n"
+                f"{format_user_block(user)}\n"
+                f"🆔 Chat ID: {chat_id}\n\n"
+                "📎 Media inviato (copiato qui sotto)."
+            ),
+            reply_markup=admin_buy_actions(chat_id)
+        )
+
+        await context.bot.copy_message(
+            chat_id=ADMIN_ID,
+            from_chat_id=update.effective_chat.id,
+            message_id=update.message.message_id
+        )
+
+        await update.message.reply_text(
+            "✅ Ricevuto.\nTi rispondo qui con i dettagli 🔒",
+            reply_markup=user_after_request_menu()
+        )
+        return
+
+    # 4) Se manda media senza contesto
     await update.message.reply_text(
-        "✅ Ricevuto.\nTi risponderò qui con i dettagli.",
-        reply_markup=user_after_request_menu()
+        "📎 Ho ricevuto il file.\n\n"
+        "Se è una ricevuta: premi prima “📎 INVIA RICEVUTA” dal menu.\n"
+        "Se è una richiesta contenuto: premi “ACQUISTA CONTENUTI 🔒” e scrivimi cosa vuoi."
     )
 
 # ---------------- WEBHOOK SERVER (Render) ----------------
@@ -317,13 +452,17 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("cancel", cancel_cmd))
 app.add_handler(CallbackQueryHandler(button_handler))
 
-# ✅ IMPORTANTISSIMO:
-# admin_outgoing SOLO se il messaggio arriva dall'ADMIN (così non blocca gli utenti)
+# Admin outgoing verso target (solo admin)
 app.add_handler(MessageHandler(filters.User(ADMIN_ID) & ~filters.COMMAND, admin_outgoing_handler), group=0)
 
-# User requests: testo e media SOLO quando awaiting_request=True
+# User testo richiesta (solo quando awaiting_request=True, gestito dentro handler)
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_request_text_handler), group=1)
-app.add_handler(MessageHandler((filters.PHOTO | filters.VIDEO | filters.VOICE | filters.Document.ALL) & ~filters.COMMAND, user_request_media_handler), group=1)
+
+# User media (ricevute / richieste)
+app.add_handler(MessageHandler(
+    (filters.PHOTO | filters.VIDEO | filters.VOICE | filters.Document.ALL) & ~filters.COMMAND,
+    user_media_handler
+), group=1)
 
 loop = asyncio.new_event_loop()
 
@@ -377,7 +516,8 @@ def run_server():
 
 async def set_webhook():
     webhook_full = f"{WEBHOOK_URL.rstrip('/')}/webhook"
-    await app.bot.set_webhook(webhook_full)
+    # drop_pending_updates evita “coda vecchia” se avevi webhook precedenti
+    await app.bot.set_webhook(webhook_full, drop_pending_updates=True)
 
 def main():
     asyncio.set_event_loop(loop)
