@@ -51,7 +51,7 @@ PRICING_TEXT = (
     "Come funziona:\n"
     "1) ✍️ Scrivimi cosa vuoi\n"
     "2) 💳 Ti mando il totale / procedi al pagamento\n"
-    "3) 📎 Inviami la ricevuta e ti consegno ✅"
+    "3) 📎 Se serve ti chiederò la ricevuta e ti consegno ✅"
 )
 
 VIP_TEXT = (
@@ -63,16 +63,14 @@ VIP_TEXT = (
     "✅ accesso anche ai contenuti che pubblico su OnlyFans\n\n"
     "💶 Prezzo: 4€ / mese\n\n"
     "📌 Causale obbligatoria:\n"
-    "👉 abbonamento + il tuo @username Telegram\n"
-    "(se non hai username: abbonamento + tuo nome)\n\n"
+    "👉 abbonamento + tuo nome oppure username Telegram\n\n"
     "Procedi dal link qui sotto 👇"
 )
 
 VIP_AFTER_PAID_TEXT = (
     "✅ Perfetto.\n\n"
-    "Per velocizzare, inviami adesso la ricevuta del pagamento 📎\n"
-    "Puoi mandare uno screenshot o un PDF.\n\n"
-    "Appena confermo, riceverai qui il mio contatto diretto 💎"
+    "Ho ricevuto la tua richiesta VIP.\n"
+    "Appena verifico il pagamento, riceverai qui il mio contatto diretto 💎"
 )
 
 WELCOME_VIP_TEXT = (
@@ -88,14 +86,14 @@ VIP_REJECT_TEXT = (
     "Ricontrolla per favore:\n"
     "1) importo corretto (4€)\n"
     "2) pagamento su PayPal risultante *Completato*\n"
-    "3) causale: abbonamento + @tuousername\n\n"
-    "📎 Inviami la ricevuta (screenshot o PDF) e controllo subito ✅"
+    "3) causale: abbonamento + tuo nome/username\n\n"
+    "📎 Premi il bottone qui sotto e inviami la ricevuta (screenshot o PDF) ✅"
 )
 
 BUY_REJECT_TEXT = (
     "⚠️ Non riesco a verificare il pagamento.\n\n"
     "Controlla che sia *Completato* e che l’importo sia corretto.\n"
-    "📎 Inviami la ricevuta (screenshot o PDF) e risolviamo subito ✅"
+    "📎 Premi il bottone qui sotto e inviami la ricevuta (screenshot o PDF) ✅"
 )
 
 BUY_CONFIRM_TEXT = (
@@ -111,17 +109,17 @@ def main_menu():
     ])
 
 def buy_menu():
+    # Nota: niente tasto ricevuta qui (lo mostriamo solo se serve, quando l'admin non trova pagamento)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 PAGA", url=PAYPAL_CONTENT_URL)],
-        [InlineKeyboardButton("📎 INVIA RICEVUTA", callback_data="buy_receipt")],
         [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
     ])
 
 def vip_menu():
+    # Nota: niente tasto ricevuta qui (lo mostriamo solo se serve, quando l'admin non trova pagamento)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 PAGA VIP", url=PAYPAL_VIP_URL)],
         [InlineKeyboardButton("✅ HO PAGATO", callback_data="vip_paid")],
-        [InlineKeyboardButton("📎 INVIA RICEVUTA", callback_data="vip_receipt")],
         [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
     ])
 
@@ -154,6 +152,18 @@ def admin_buy_actions(chat_id: int):
         [InlineKeyboardButton("❌ ANNULLA TARGET", callback_data="unsettarget")],
     ])
 
+def receipt_buttons(kind: str):
+    # kind: "vip" oppure "buy"
+    if kind == "vip":
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("📎 INVIA RICEVUTA", callback_data="vip_receipt")],
+            [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
+        ])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📎 INVIA RICEVUTA", callback_data="buy_receipt")],
+        [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
+    ])
+
 # ---------------- HELPERS ----------------
 def format_user_block(user) -> str:
     name = " ".join([x for x in [user.first_name, user.last_name] if x]).strip()
@@ -161,9 +171,6 @@ def format_user_block(user) -> str:
     if uname:
         return f"👤 {name}\n🔗 {uname}"
     return f"👤 {name}"
-
-def get_user_tag_for_causale(user) -> str:
-    return f"@{user.username}" if user.username else "(nessun username)"
 
 # ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -176,7 +183,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # -------- MENU USER --------
     if data == "buy":
-        # entri in modalità richiesta + possibilità ricevuta
         context.user_data["awaiting_request"] = True
         context.user_data["request_mode"] = "new"
         context.user_data.pop("awaiting_vip_receipt", None)
@@ -192,25 +198,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "vip":
-        # mostra VIP + causale con username
-        user = query.from_user
-        vip_text_with_causale = VIP_TEXT.replace(
-            "👉 abbonamento + il tuo @username Telegram",
-            f"👉 abbonamento {get_user_tag_for_causale(user)}"
-        )
-
         context.user_data.pop("awaiting_request", None)
         context.user_data.pop("awaiting_buy_receipt", None)
         context.user_data.pop("awaiting_vip_receipt", None)
 
-        await query.edit_message_text(vip_text_with_causale, reply_markup=vip_menu())
+        await query.edit_message_text(VIP_TEXT, reply_markup=vip_menu())
 
     elif data == "vip_paid":
-        # l'utente dichiara pagamento: chiediamo ricevuta e notifichiamo admin
         user = query.from_user
         chat_id = query.message.chat_id
 
-        context.user_data["awaiting_vip_receipt"] = True
+        # NON chiediamo ricevuta subito: la chiediamo solo se l'admin non trova il pagamento
+        context.user_data.pop("awaiting_vip_receipt", None)
         context.user_data.pop("awaiting_buy_receipt", None)
         context.user_data.pop("awaiting_request", None)
 
@@ -220,9 +219,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "💎 VIP — UTENTE HA PREMUTO “HO PAGATO”\n\n"
                 f"{format_user_block(user)}\n"
                 f"🆔 Chat ID: {chat_id}\n\n"
-                "👉 Se arriva la ricevuta, te la inoltro qui.\n"
-                "Quando trovi il pagamento su PayPal: ✅ CONFERMA.\n"
-                "Se non lo trovi: ❌ NON TROVO."
+                "Controlla PayPal:\n"
+                "✅ CONFERMA PAGAMENTO se lo trovi\n"
+                "❌ NON TROVO PAGAMENTO se non lo trovi (in quel caso chiederò ricevuta all’utente)"
             ),
             reply_markup=admin_vip_actions(chat_id)
         )
@@ -230,7 +229,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(VIP_AFTER_PAID_TEXT)
 
     elif data == "vip_receipt":
-        # forza modalità invio ricevuta VIP
+        # l'utente può inviare ricevuta solo quando glielo chiediamo (impostiamo la modalità)
         context.user_data["awaiting_vip_receipt"] = True
         context.user_data.pop("awaiting_buy_receipt", None)
         context.user_data.pop("awaiting_request", None)
@@ -242,7 +241,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "buy_receipt":
-        # forza modalità invio ricevuta ACQUISTO
         context.user_data["awaiting_buy_receipt"] = True
         context.user_data.pop("awaiting_vip_receipt", None)
 
@@ -284,8 +282,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.from_user.id != ADMIN_ID:
             return
         target_chat = int(data.split(":", 1)[1])
-        await context.bot.send_message(chat_id=target_chat, text=VIP_REJECT_TEXT)
-        await query.message.reply_text(f"❌ Ho inviato richiesta verifica VIP a: {target_chat}")
+
+        # Qui mostriamo ALL'UTENTE il bottone ricevuta (solo ora)
+        await context.bot.send_message(
+            chat_id=target_chat,
+            text=VIP_REJECT_TEXT,
+            reply_markup=receipt_buttons("vip"),
+        )
+        await query.message.reply_text(f"❌ Ho chiesto la ricevuta VIP a: {target_chat}")
 
     elif data.startswith("buy_confirm:"):
         if query.from_user.id != ADMIN_ID:
@@ -298,8 +302,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.from_user.id != ADMIN_ID:
             return
         target_chat = int(data.split(":", 1)[1])
-        await context.bot.send_message(chat_id=target_chat, text=BUY_REJECT_TEXT)
-        await query.message.reply_text(f"❌ Ho inviato richiesta verifica pagamento contenuti a: {target_chat}")
+
+        # Anche qui: bottone ricevuta solo quando serve
+        await context.bot.send_message(
+            chat_id=target_chat,
+            text=BUY_REJECT_TEXT,
+            reply_markup=receipt_buttons("buy"),
+        )
+        await query.message.reply_text(f"❌ Ho chiesto la ricevuta pagamento contenuti a: {target_chat}")
 
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -441,7 +451,7 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # 4) Se manda media senza contesto
     await update.message.reply_text(
         "📎 Ho ricevuto il file.\n\n"
-        "Se è una ricevuta: premi prima “📎 INVIA RICEVUTA” dal menu.\n"
+        "Se è una ricevuta: aspetta che te la chieda io (quando non trovo il pagamento).\n"
         "Se è una richiesta contenuto: premi “ACQUISTA CONTENUTI 🔒” e scrivimi cosa vuoi."
     )
 
@@ -455,7 +465,7 @@ app.add_handler(CallbackQueryHandler(button_handler))
 # Admin outgoing verso target (solo admin)
 app.add_handler(MessageHandler(filters.User(ADMIN_ID) & ~filters.COMMAND, admin_outgoing_handler), group=0)
 
-# User testo richiesta (solo quando awaiting_request=True, gestito dentro handler)
+# User testo richiesta
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_request_text_handler), group=1)
 
 # User media (ricevute / richieste)
@@ -516,7 +526,6 @@ def run_server():
 
 async def set_webhook():
     webhook_full = f"{WEBHOOK_URL.rstrip('/')}/webhook"
-    # drop_pending_updates evita “coda vecchia” se avevi webhook precedenti
     await app.bot.set_webhook(webhook_full, drop_pending_updates=True)
 
 def main():
@@ -533,3 +542,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
