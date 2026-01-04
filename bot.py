@@ -28,7 +28,8 @@ if ADMIN_ID == 0:
 if not WEBHOOK_URL:
     raise RuntimeError("WEBHOOK_URL mancante nelle env.")
 
-PAYPAL_VIP_URL = "https://www.paypal.com/paypalme/iliyanadg/3"
+# ✅ VIP: prezzo 4€
+PAYPAL_VIP_URL = "https://www.paypal.com/paypalme/iliyanadg/4"
 
 PRICING_TEXT = (
     "💰 Prezzi\n"
@@ -37,6 +38,26 @@ PRICING_TEXT = (
     "• Video breve (1–2 min): 20€\n"
     "• Video lungo / bundle: da 30€\n\n"
     "📌 Scrivi cosa desideri (o manda direttamente foto/video/audio come riferimento)."
+)
+
+VIP_TEXT = (
+    "VIP ACCESS 💎\n\n"
+    "Il VIP Access è uno spazio più intimo e riservato:\n\n"
+    "✔️ contatto diretto con me tramite messaggi e audio\n"
+    "✔️ contenuti a pagamento\n"
+    "✔️ possibilità di richiedere contenuti personalizzati a pagamento\n"
+    "✔️ accesso anche ai contenuti che pubblico su OnlyFans\n\n"
+    "Prezzo: €4 / mese\n\n"
+    "Dopo il pagamento riceverai il mio contatto diretto\n"
+    "e potrai scrivermi privatamente.\n\n"
+    "Procedi dal link qui sotto, inserendo la causale \"abbonamento\" 👇"
+)
+
+WELCOME_VIP_TEXT = (
+    "💎 Benvenuto nel VIP Access\n\n"
+    "Da ora puoi scrivermi direttamente qui:\n"
+    f"👉 {MY_CONTACT}\n\n"
+    "Accesso valido 30 giorni."
 )
 
 # ---------------- UI ----------------
@@ -55,8 +76,11 @@ def user_after_request_menu():
     ])
 
 def admin_actions_menu(chat_id: int):
+    # ✅ QUI: bottoni admin (target + conferma/rifiuta pagamento)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎯 Imposta target", callback_data=f"settarget:{chat_id}")],
+        [InlineKeyboardButton("✅ CONFERMA PAGAMENTO", callback_data=f"vip_confirm:{chat_id}")],
+        [InlineKeyboardButton("❌ RIFIUTA / NON TROVO PAGAMENTO", callback_data=f"vip_reject:{chat_id}")],
         [InlineKeyboardButton("❌ Annulla target", callback_data="unsettarget")],
     ])
 
@@ -71,9 +95,12 @@ def format_user_line(user) -> str:
 
 # ---------------- BOT HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Nota: per Telegram, l’utente deve premere Start almeno una volta per ricevere messaggi.
     await update.message.reply_text(
-        "Benvenuto 💬\n\nScegli cosa vuoi fare:",
+        "Hey… sei arrivato nel posto giusto 😈\n"
+        "Adesso scegli bene 😽\n\n"
+        "🔒 Vuoi un contenuto?\n"
+        "💎 Vuoi l'accesso VIP e parlare direttamente con me?\n\n"
+        "Scegli 👇",
         reply_markup=main_menu()
     )
 
@@ -82,6 +109,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
+    # -------- USER FLOWS --------
     if data == "buy":
         await query.edit_message_text(
             f"ACQUISTA CONTENUTI 🔒\n\n{PRICING_TEXT}\n\n✍️ Scrivi ora la tua richiesta."
@@ -98,11 +126,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "vip":
         await query.edit_message_text(
-            "VIP ACCESS 💎\n\n"
-            "Abbonamento mensile: €3\n\n"
-            "1) Paga dal bottone qui sotto\n"
-            "2) Poi premi HO PAGATO\n"
-            "3) Ti invio il contatto diretto dopo conferma ✅",
+            VIP_TEXT,
             reply_markup=InlineKeyboardMarkup(
                 [
                     [InlineKeyboardButton("💳 PAGA VIP", url=PAYPAL_VIP_URL)],
@@ -122,8 +146,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "💎 RICHIESTA VIP (ha premuto HO PAGATO)\n"
                 f"{format_user_line(user)}\n"
                 f"🆔 Chat ID: {chat_id}\n\n"
-                "Se vedi il pagamento su PayPal, conferma con:\n"
-                f"/vip_ok {chat_id}"
+                "Controlla PayPal: se trovi il pagamento premi ✅ CONFERMA PAGAMENTO.\n"
+                "Se non lo trovi premi ❌ RIFIUTA."
             ),
             reply_markup=admin_actions_menu(chat_id)
         )
@@ -133,6 +157,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Appena confermo il pagamento, riceverai qui il contatto diretto 💎"
         )
 
+    elif data == "back":
+        await query.edit_message_text("Scegli cosa vuoi fare:", reply_markup=main_menu())
+
+    # -------- ADMIN ACTIONS (INLINE) --------
     elif data.startswith("settarget:"):
         if query.from_user.id != ADMIN_ID:
             return
@@ -150,27 +178,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("admin_target_chat", None)
         await query.message.reply_text("✅ Target annullato.")
 
-    elif data == "back":
-        await query.edit_message_text("Scegli cosa vuoi fare:", reply_markup=main_menu())
+    elif data.startswith("vip_confirm:"):
+        if query.from_user.id != ADMIN_ID:
+            return
+        target_chat = int(data.split(":", 1)[1])
 
-async def vip_ok_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if len(context.args) < 1:
-        await update.message.reply_text("Uso: /vip_ok CHAT_ID")
-        return
+        await context.bot.send_message(
+            chat_id=target_chat,
+            text=WELCOME_VIP_TEXT
+        )
 
-    target_chat = int(context.args[0])
-    await context.bot.send_message(
-        chat_id=target_chat,
-        text=(
-            "💎 Benvenuto nel VIP Access\n\n"
-            "Da ora puoi scrivermi direttamente qui:\n"
-            f"👉 {MY_CONTACT}\n\n"
-            "Accesso valido 30 giorni."
-        ),
-    )
-    await update.message.reply_text("✅ VIP confermato: contatto inviato all’utente.")
+        await query.message.reply_text(
+            f"✅ Pagamento confermato. Ho inviato il benvenuto VIP a: {target_chat}"
+        )
+
+    elif data.startswith("vip_reject:"):
+        if query.from_user.id != ADMIN_ID:
+            return
+        target_chat = int(data.split(":", 1)[1])
+
+        await context.bot.send_message(
+            chat_id=target_chat,
+            text=(
+                "⚠️ Non riesco a trovare il pagamento.\n\n"
+                "Per favore ricontrolla di aver pagato correttamente su PayPal con causale \"abbonamento\".\n"
+                "Se hai pagato, mandami uno screenshot della ricevuta qui in chat e lo verifico subito ✅"
+            )
+        )
+
+        await query.message.reply_text(
+            f"❌ Ho inviato la richiesta di verifica (pagamento non trovato) a: {target_chat}"
+        )
 
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -185,12 +223,12 @@ async def admin_outgoing_handler(update: Update, context: ContextTypes.DEFAULT_T
     """
     if update.effective_user.id != ADMIN_ID:
         return
+
     target_chat = context.user_data.get("admin_target_chat")
     if not target_chat:
         await update.message.reply_text("⚠️ Nessun target impostato. Premi 🎯 Imposta target su una richiesta.")
         return
 
-    # copia qualunque cosa (testo o media) verso il target
     await context.bot.copy_message(
         chat_id=int(target_chat),
         from_chat_id=update.effective_chat.id,
@@ -243,7 +281,6 @@ async def user_request_media_handler(update: Update, context: ContextTypes.DEFAU
     chat_id = update.effective_chat.id
     header = "📩 NUOVA RICHIESTA CONTENUTO (MEDIA)" if mode == "new" else "➕ DETTAGLI AGGIUNTIVI (MEDIA)"
 
-    # prima un messaggio testuale all'admin
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=(
@@ -255,7 +292,6 @@ async def user_request_media_handler(update: Update, context: ContextTypes.DEFAU
         reply_markup=admin_actions_menu(chat_id)
     )
 
-    # poi copia il media all'admin
     await context.bot.copy_message(
         chat_id=ADMIN_ID,
         from_chat_id=update.effective_chat.id,
@@ -271,12 +307,12 @@ async def user_request_media_handler(update: Update, context: ContextTypes.DEFAU
 app = Application.builder().token(BOT_TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("vip_ok", vip_ok_cmd))
 app.add_handler(CommandHandler("cancel", cancel_cmd))
 app.add_handler(CallbackQueryHandler(button_handler))
 
-# Admin: qualunque messaggio/media mentre target impostato
-app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, admin_outgoing_handler), group=0)
+# ✅ IMPORTANTISSIMO:
+# admin_outgoing SOLO se il messaggio arriva dall'ADMIN (così non blocca gli utenti)
+app.add_handler(MessageHandler(filters.User(ADMIN_ID) & ~filters.COMMAND, admin_outgoing_handler), group=0)
 
 # User requests: testo e media SOLO quando awaiting_request=True
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_request_text_handler), group=1)
