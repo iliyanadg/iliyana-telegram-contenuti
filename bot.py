@@ -50,8 +50,9 @@ PRICING_TEXT = (
     "🔥 Video lungo / Bundle — da 30€\n\n"
     "Come funziona:\n"
     "1) ✍️ Scrivimi cosa vuoi\n"
-    "2) 💳 Ti mando il totale / procedi al pagamento\n"
-    "3) 📎 Se serve ti chiederò la ricevuta e ti consegno ✅"
+    "2) 💳 Ti mando il totale\n"
+    "3) 🧾 Paga inserendo causale: Membership + tuo nome/username\n"
+    "4) ✅ Premi “HO PAGATO”"
 )
 
 VIP_TEXT = (
@@ -90,6 +91,12 @@ VIP_REJECT_TEXT = (
     "📎 Premi il bottone qui sotto e inviami la ricevuta (screenshot o PDF) ✅"
 )
 
+BUY_AFTER_PAID_TEXT = (
+    "✅ Perfetto.\n\n"
+    "Ho ricevuto la conferma del pagamento.\n"
+    "Appena verifico, ti scrivo qui e procediamo ✅"
+)
+
 BUY_REJECT_TEXT = (
     "⚠️ Non riesco a verificare il pagamento.\n\n"
     "Controlla che sia *Completato* e che l’importo sia corretto.\n"
@@ -109,14 +116,13 @@ def main_menu():
     ])
 
 def buy_menu():
-    # Nota: niente tasto ricevuta qui (lo mostriamo solo se serve, quando l'admin non trova pagamento)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 PAGA", url=PAYPAL_CONTENT_URL)],
+        [InlineKeyboardButton("✅ HO PAGATO", callback_data="buy_paid")],
         [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
     ])
 
 def vip_menu():
-    # Nota: niente tasto ricevuta qui (lo mostriamo solo se serve, quando l'admin non trova pagamento)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 PAGA VIP", url=PAYPAL_VIP_URL)],
         [InlineKeyboardButton("✅ HO PAGATO", callback_data="vip_paid")],
@@ -128,12 +134,6 @@ def user_after_request_menu():
         [InlineKeyboardButton("➕ Aggiungi dettagli", callback_data="add_details")],
         [InlineKeyboardButton("🆕 Nuova richiesta", callback_data="buy")],
         [InlineKeyboardButton("⬅️ Menu", callback_data="back")],
-    ])
-
-def admin_target_menu(chat_id: int):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎯 IMPOSTA TARGET", callback_data=f"settarget:{chat_id}")],
-        [InlineKeyboardButton("❌ ANNULLA TARGET", callback_data="unsettarget")],
     ])
 
 def admin_vip_actions(chat_id: int):
@@ -153,7 +153,6 @@ def admin_buy_actions(chat_id: int):
     ])
 
 def receipt_buttons(kind: str):
-    # kind: "vip" oppure "buy"
     if kind == "vip":
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("📎 INVIA RICEVUTA", callback_data="vip_receipt")],
@@ -208,7 +207,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = query.from_user
         chat_id = query.message.chat_id
 
-        # NON chiediamo ricevuta subito: la chiediamo solo se l'admin non trova il pagamento
         context.user_data.pop("awaiting_vip_receipt", None)
         context.user_data.pop("awaiting_buy_receipt", None)
         context.user_data.pop("awaiting_request", None)
@@ -228,8 +226,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(VIP_AFTER_PAID_TEXT)
 
+    elif data == "buy_paid":
+        user = query.from_user
+        chat_id = query.message.chat_id
+
+        context.user_data.pop("awaiting_buy_receipt", None)
+        context.user_data.pop("awaiting_vip_receipt", None)
+        context.user_data.pop("awaiting_request", None)
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "🔒 CONTENUTI — UTENTE HA PREMUTO “HO PAGATO”\n\n"
+                f"{format_user_block(user)}\n"
+                f"🆔 Chat ID: {chat_id}\n\n"
+                "Controlla PayPal:\n"
+                "✅ PAGAMENTO OK se lo trovi\n"
+                "❌ NON TROVO PAGAMENTO se non lo trovi (in quel caso chiederò ricevuta all’utente)"
+            ),
+            reply_markup=admin_buy_actions(chat_id)
+        )
+
+        await query.edit_message_text(BUY_AFTER_PAID_TEXT)
+
     elif data == "vip_receipt":
-        # l'utente può inviare ricevuta solo quando glielo chiediamo (impostiamo la modalità)
         context.user_data["awaiting_vip_receipt"] = True
         context.user_data.pop("awaiting_buy_receipt", None)
         context.user_data.pop("awaiting_request", None)
@@ -282,8 +302,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.from_user.id != ADMIN_ID:
             return
         target_chat = int(data.split(":", 1)[1])
-
-        # Qui mostriamo ALL'UTENTE il bottone ricevuta (solo ora)
         await context.bot.send_message(
             chat_id=target_chat,
             text=VIP_REJECT_TEXT,
@@ -302,8 +320,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.from_user.id != ADMIN_ID:
             return
         target_chat = int(data.split(":", 1)[1])
-
-        # Anche qui: bottone ricevuta solo quando serve
         await context.bot.send_message(
             chat_id=target_chat,
             text=BUY_REJECT_TEXT,
@@ -377,7 +393,7 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "📎 RICEVUTA VIP RICEVUTA\n\n"
                 f"{format_user_block(user)}\n"
                 f"🆔 Chat ID: {chat_id}\n\n"
-                "Controlla PayPal e poi:\n"
+                "Ora puoi:\n"
                 "✅ CONFERMA PAGAMENTO / ❌ NON TROVO PAGAMENTO"
             ),
             reply_markup=admin_vip_actions(chat_id)
@@ -389,12 +405,10 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             message_id=update.message.message_id
         )
 
-        await update.message.reply_text(
-            "✅ Ricevuta ricevuta.\nSto verificando e ti confermo appena possibile 💎"
-        )
+        await update.message.reply_text("✅ Ricevuta ricevuta. Sto verificando 💎")
         return
 
-    # 2) Ricevuta acquisto contenuti
+    # 2) Ricevuta contenuti
     if context.user_data.get("awaiting_buy_receipt"):
         context.user_data["awaiting_buy_receipt"] = False
 
@@ -414,12 +428,10 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             message_id=update.message.message_id
         )
 
-        await update.message.reply_text(
-            "✅ Ricevuta ricevuta.\nPerfetto, controllo e ti rispondo qui 🔒"
-        )
+        await update.message.reply_text("✅ Ricevuta ricevuta. Controllo e ti rispondo 🔒")
         return
 
-    # 3) Media come richiesta contenuto (se awaiting_request)
+    # 3) Media come richiesta contenuto
     if context.user_data.get("awaiting_request"):
         context.user_data["awaiting_request"] = False
         mode = context.user_data.get("request_mode", "new")
@@ -448,11 +460,10 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    # 4) Se manda media senza contesto
     await update.message.reply_text(
         "📎 Ho ricevuto il file.\n\n"
-        "Se è una ricevuta: aspetta che te la chieda io (quando non trovo il pagamento).\n"
-        "Se è una richiesta contenuto: premi “ACQUISTA CONTENUTI 🔒” e scrivimi cosa vuoi."
+        "Se è una ricevuta: usa il bottone “📎 INVIA RICEVUTA” solo quando te lo chiedo.\n"
+        "Se è una richiesta: premi “ACQUISTA CONTENUTI 🔒” e scrivimi cosa vuoi."
     )
 
 # ---------------- WEBHOOK SERVER (Render) ----------------
