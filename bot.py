@@ -95,12 +95,19 @@ def format_user_line(user) -> str:
 
 # ---------------- BOT HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    welcome = (
+        "╭──────────────╮\n"
+        "   ✨  MENU PRIVATO  ✨\n"
+        "╰──────────────╯\n\n"
         "Hey… sei arrivato nel posto giusto 😈\n"
         "Adesso scegli bene 😽\n\n"
-        "🔒 Vuoi un contenuto?\n"
-        "💎 Vuoi l'accesso VIP e parlare direttamente con me?\n\n"
-        "Scegli 👇",
+        "🔒  Vuoi un contenuto?\n"
+        "💎  Vuoi il VIP e parlare direttamente con me?\n\n"
+        "👇 Scegli qui sotto"
+    )
+
+    await update.message.reply_text(
+        welcome,
         reply_markup=main_menu()
     )
 
