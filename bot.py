@@ -32,39 +32,51 @@ if not WEBHOOK_URL:
 PAYPAL_VIP_URL = "https://www.paypal.com/paypalme/iliyanadg/4"
 PAYPAL_CONTENT_URL = "https://www.paypal.com/paypalme/iliyanadg"  # importo variabile
 
-# ---------------- TESTI ----------------
+# ---------------- TESTI (AGGIORNATI) ----------------
 WELCOME_TEXT = (
     "Hey… sei arrivato nel posto giusto 😈\n"
     "Adesso scegli bene 😽\n\n"
-    "🔒 Vuoi un contenuto?\n"
-    "💎 Vuoi il VIP e parlare direttamente con me?\n\n"
+    "🔒 Vuoi sbloccare contenuti (senza contatto diretto)?\n"
+    "💎 Vuoi il VIP e parlarmi direttamente?\n\n"
     "Scegli qui sotto 👇"
 )
 
+# 🔒 NON-VIP: pacchetti + regole chiare (NO cam, NO chat)
 PRICING_TEXT = (
     "🔒 ACQUISTA CONTENUTI\n\n"
-    "💰 Prezzi\n"
-    "📸 Foto singola — 5€\n"
-    "🖼️ Set 5 foto — 15€\n"
-    "🎥 Video breve (1–2 min) — 20€\n"
-    "🔥 Video lungo / Bundle — da 30€\n\n"
-    "Come funziona:\n"
-    "1) ✍️ Scrivimi cosa vuoi\n"
-    "2) 💳 Ti mando il totale\n"
-    "3) 🧾 Paga inserendo causale: Membership + tuo nome/username\n"
-    "4) ✅ Premi “HO PAGATO”"
+    "📦 PACCHETTI (contenuti registrati)\n"
+    "• 10 foto hot — 15€\n"
+    "• 10 foto + 1 video breve (1–2 min) — 25€\n"
+    "• 15 foto + 2 video (breve + medio) — 40€\n\n"
+    "➕ EXTRA (su richiesta)\n"
+    "• video medio (3–5 min) — 25–35€\n"
+    "• video lungo (6–10 min) — 40–50€\n\n"
+    "📌 COME FUNZIONA\n"
+    "1) ✍️ Scrivimi cosa vuoi (o dimmi quale pacchetto)\n"
+    "2) 💳 Ti dico il totale\n"
+    "3) 🧾 Paga con causale: Membership + tuo nome/username\n"
+    "4) ✅ Premi “HO PAGATO”\n\n"
+    "🚫 Nessuna cam\n"
+    "🚫 Nessuna chat privata continua\n"
+    "✅ Solo contenuti registrati"
 )
 
+# 💎 VIP: include cam SOLO VIP con prezzi, e sex chat testuale inclusa
 VIP_TEXT = (
     "💎 VIP ACCESS\n\n"
     "Uno spazio più intimo e riservato:\n"
     "✅ contatto diretto con me (messaggi + audio)\n"
-    "✅ contenuti a pagamento\n"
-    "✅ richieste personalizzate (a pagamento)\n"
-    "✅ accesso anche ai contenuti che pubblico su OnlyFans\n\n"
-    "💶 Prezzo: 4€ / mese\n\n"
+    "✅ chat privata (non immediata, ma garantita)\n"
+    "✅ sex chat testuale inclusa\n"
+    "✅ accesso ai contenuti che pubblico su OnlyFans\n"
+    "✅ possibilità di acquistare contenuti extra\n\n"
+    "🔥 CAM LIVE — SOLO VIP\n"
+    "• 5 min — 15€\n"
+    "• 10 min — 20€\n"
+    "• 15 min — 25€\n\n"
+    "💶 Prezzo VIP: 4€ / mese\n\n"
     "📌 Causale obbligatoria:\n"
-    "👉 abbonamento + tuo nome oppure username Telegram\n\n"
+    "👉 Membership + tuo nome oppure username Telegram\n\n"
     "Procedi dal link qui sotto 👇"
 )
 
@@ -82,12 +94,13 @@ WELCOME_VIP_TEXT = (
     "Scrivimi pure cosa vuoi fare 😽"
 )
 
+# Ricevuta: richiesta SOLO se non trovi pagamento (come vuoi tu)
 VIP_REJECT_TEXT = (
     "⚠️ Non riesco a trovare il pagamento.\n\n"
     "Ricontrolla per favore:\n"
     "1) importo corretto (4€)\n"
     "2) pagamento su PayPal risultante *Completato*\n"
-    "3) causale: abbonamento + tuo nome/username\n\n"
+    "3) causale: Membership + tuo nome/username\n\n"
     "📎 Premi il bottone qui sotto e inviami la ricevuta (screenshot o PDF) ✅"
 )
 
@@ -553,3 +566,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
