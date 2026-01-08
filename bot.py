@@ -1,3 +1,4 @@
+```python
 import os
 import json
 import asyncio
@@ -44,7 +45,7 @@ WELCOME_TEXT = (
 # 🔒 NON-VIP: pacchetti + regole chiare (NO cam, NO chat)
 PRICING_TEXT = (
     "🔒 ACQUISTA CONTENUTI\n\n"
-    "📦 PACCHETTI (contenuti registrati)\n"
+    "📷 PACCHETTI (contenuti registrati)\n"
     "• 10 foto hot — 15€\n"
     "• 10 foto + 1 video breve (1–2 min) — 25€\n"
     "• 15 foto + 2 video (breve + medio) — 40€\n\n"
@@ -61,16 +62,18 @@ PRICING_TEXT = (
     "✅ Solo contenuti registrati"
 )
 
-# 💎 VIP: include cam SOLO VIP con prezzi, e sex chat testuale inclusa
+# 💎 VIP: contatto diretto; sex chat NON inclusa (extra); cam SOLO VIP (extra)
 VIP_TEXT = (
     "💎 VIP ACCESS\n\n"
     "Uno spazio più intimo e riservato:\n"
     "✅ contatto diretto con me (messaggi + audio)\n"
-    "✅ chat privata (non immediata, ma garantita)\n"
-    "✅ sex chat testuale inclusa\n"
+    "✅ chat privata\n"
     "✅ accesso ai contenuti che pubblico su OnlyFans\n"
     "✅ possibilità di acquistare contenuti extra\n\n"
-    "🔥 CAM LIVE — SOLO VIP\n"
+    "📌 EXTRA (su richiesta, a pagamento)\n"
+    "• sex chat\n"
+    "• contenuti personalizzati\n\n"
+    "🎥 CAM LIVE — SOLO VIP (extra)\n"
     "• 5 min — 15€\n"
     "• 10 min — 20€\n"
     "• 15 min — 25€\n\n"
@@ -91,10 +94,10 @@ WELCOME_VIP_TEXT = (
     "Da ora puoi scrivermi direttamente qui:\n"
     f"👉 {MY_CONTACT}\n\n"
     "⏳ Accesso valido 30 giorni.\n"
-    "Scrivimi pure cosa vuoi fare 😽"
+    "Scrivimi pure non vedo l'ora di conoscerti. 😽"
 )
 
-# Ricevuta: richiesta SOLO se non trovi pagamento (come vuoi tu)
+# Ricevuta: richiesta SOLO se non trovi pagamento
 VIP_REJECT_TEXT = (
     "⚠️ Non riesco a trovare il pagamento.\n\n"
     "Ricontrolla per favore:\n"
@@ -121,11 +124,26 @@ BUY_CONFIRM_TEXT = (
     "Perfetto, preparo il contenuto e te lo invio qui 💋"
 )
 
+PROBLEM_INTRO_TEXT = (
+    "⚠️ SEGNALA UN PROBLEMA\n\n"
+    "Scrivi qui sotto cosa è successo:\n"
+    "• cosa stavi facendo\n"
+    "• cosa non funziona\n"
+    "• (se puoi) orario + screenshot\n\n"
+    "📌 Questo spazio è solo per problemi tecnici, non è una chat personale."
+)
+
+PROBLEM_THANKS_TEXT = (
+    "✅ Segnalazione inviata.\n"
+    "Controllo appena possibile."
+)
+
 # ---------------- UI ----------------
 def main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("ACQUISTA CONTENUTI 🔒", callback_data="buy")],
         [InlineKeyboardButton("VIP ACCESS 💎", callback_data="vip")],
+        [InlineKeyboardButton("⚠️ SEGNALA UN PROBLEMA", callback_data="problem")],
     ])
 
 def buy_menu():
@@ -180,12 +198,27 @@ def receipt_buttons(kind: str):
 def format_user_block(user) -> str:
     name = " ".join([x for x in [user.first_name, user.last_name] if x]).strip()
     uname = f"@{user.username}" if user.username else ""
-    if uname:
+    if uname and name:
         return f"👤 {name}\n🔗 {uname}"
-    return f"👤 {name}"
+    if uname and not name:
+        return f"🔗 {uname}"
+    return f"👤 {name}" if name else "👤 (no name)"
+
+def reset_user_state(context: ContextTypes.DEFAULT_TYPE):
+    # Resetta tutte le modalità utente (così funziona sempre anche “la seconda volta”)
+    context.user_data.pop("awaiting_request", None)
+    context.user_data.pop("request_mode", None)
+    context.user_data.pop("awaiting_vip_receipt", None)
+    context.user_data.pop("awaiting_buy_receipt", None)
+    context.user_data.pop("awaiting_problem", None)
 
 # ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reset_user_state(context)
+    await update.message.reply_text(WELCOME_TEXT, reply_markup=main_menu())
+
+async def menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reset_user_state(context)
     await update.message.reply_text(WELCOME_TEXT, reply_markup=main_menu())
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -195,14 +228,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # -------- MENU USER --------
     if data == "buy":
+        reset_user_state(context)
         context.user_data["awaiting_request"] = True
         context.user_data["request_mode"] = "new"
-        context.user_data.pop("awaiting_vip_receipt", None)
-        context.user_data.pop("awaiting_buy_receipt", None)
-
         await query.edit_message_text(PRICING_TEXT, reply_markup=buy_menu())
 
     elif data == "add_details":
+        reset_user_state(context)
         context.user_data["awaiting_request"] = True
         context.user_data["request_mode"] = "details"
         await query.edit_message_text(
@@ -210,19 +242,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "vip":
-        context.user_data.pop("awaiting_request", None)
-        context.user_data.pop("awaiting_buy_receipt", None)
-        context.user_data.pop("awaiting_vip_receipt", None)
-
+        reset_user_state(context)
         await query.edit_message_text(VIP_TEXT, reply_markup=vip_menu())
+
+    elif data == "problem":
+        reset_user_state(context)
+        context.user_data["awaiting_problem"] = True
+        await query.edit_message_text(PROBLEM_INTRO_TEXT, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Menu", callback_data="back")]
+        ]))
 
     elif data == "vip_paid":
         user = query.from_user
         chat_id = query.message.chat_id
-
-        context.user_data.pop("awaiting_vip_receipt", None)
-        context.user_data.pop("awaiting_buy_receipt", None)
-        context.user_data.pop("awaiting_request", None)
+        reset_user_state(context)
 
         await context.bot.send_message(
             chat_id=ADMIN_ID,
@@ -236,16 +269,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             reply_markup=admin_vip_actions(chat_id)
         )
-
         await query.edit_message_text(VIP_AFTER_PAID_TEXT)
 
     elif data == "buy_paid":
         user = query.from_user
         chat_id = query.message.chat_id
-
-        context.user_data.pop("awaiting_buy_receipt", None)
-        context.user_data.pop("awaiting_vip_receipt", None)
-        context.user_data.pop("awaiting_request", None)
+        reset_user_state(context)
 
         await context.bot.send_message(
             chat_id=ADMIN_ID,
@@ -259,14 +288,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             reply_markup=admin_buy_actions(chat_id)
         )
-
         await query.edit_message_text(BUY_AFTER_PAID_TEXT)
 
     elif data == "vip_receipt":
+        # Questo bottone viene mostrato SOLO quando l’admin non trova il pagamento
+        reset_user_state(context)
         context.user_data["awaiting_vip_receipt"] = True
-        context.user_data.pop("awaiting_buy_receipt", None)
-        context.user_data.pop("awaiting_request", None)
-
         await query.edit_message_text(
             "📎 INVIA RICEVUTA VIP\n\n"
             "Mandami ora uno screenshot o un PDF del pagamento PayPal.\n"
@@ -274,9 +301,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "buy_receipt":
+        # Questo bottone viene mostrato SOLO quando l’admin non trova il pagamento
+        reset_user_state(context)
         context.user_data["awaiting_buy_receipt"] = True
-        context.user_data.pop("awaiting_vip_receipt", None)
-
         await query.edit_message_text(
             "📎 INVIA RICEVUTA (CONTENUTI)\n\n"
             "Mandami ora uno screenshot o un PDF del pagamento.\n"
@@ -284,6 +311,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "back":
+        reset_user_state(context)
         await query.edit_message_text(WELCOME_TEXT, reply_markup=main_menu())
 
     # -------- AZIONI ADMIN --------
@@ -363,33 +391,60 @@ async def admin_outgoing_handler(update: Update, context: ContextTypes.DEFAULT_T
     )
     await update.message.reply_text("✅ Inviato all’utente.")
 
-# ---------------- USER REQUEST (testo) ----------------
-async def user_request_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("awaiting_request"):
+# ---------------- USER REQUEST / PROBLEM (testo) ----------------
+async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 1) Segnalazione problema
+    if context.user_data.get("awaiting_problem"):
+        context.user_data["awaiting_problem"] = False
+
+        user = update.effective_user
+        chat_id = update.effective_chat.id
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "⚠️ SEGNALAZIONE PROBLEMA\n\n"
+                f"{format_user_block(user)}\n"
+                f"🆔 Chat ID: {chat_id}\n\n"
+                f"📝 Testo:\n{update.message.text}"
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎯 IMPOSTA TARGET", callback_data=f"settarget:{chat_id}")],
+                [InlineKeyboardButton("❌ ANNULLA TARGET", callback_data="unsettarget")],
+            ])
+        )
+
+        await update.message.reply_text(PROBLEM_THANKS_TEXT, reply_markup=user_after_request_menu())
         return
 
-    context.user_data["awaiting_request"] = False
-    mode = context.user_data.get("request_mode", "new")
+    # 2) Richiesta contenuti (testo)
+    if context.user_data.get("awaiting_request"):
+        context.user_data["awaiting_request"] = False
+        mode = context.user_data.get("request_mode", "new")
 
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    header = "📩 NUOVA RICHIESTA CONTENUTO" if mode == "new" else "➕ DETTAGLI AGGIUNTIVI"
+        user = update.effective_user
+        chat_id = update.effective_chat.id
+        header = "📩 NUOVA RICHIESTA CONTENUTO" if mode == "new" else "➕ DETTAGLI AGGIUNTIVI"
 
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=(
-            f"{header}\n\n"
-            f"{format_user_block(user)}\n"
-            f"🆔 Chat ID: {chat_id}\n\n"
-            f"📝 Testo:\n{update.message.text}"
-        ),
-        reply_markup=admin_buy_actions(chat_id)
-    )
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                f"{header}\n\n"
+                f"{format_user_block(user)}\n"
+                f"🆔 Chat ID: {chat_id}\n\n"
+                f"📝 Testo:\n{update.message.text}"
+            ),
+            reply_markup=admin_buy_actions(chat_id)
+        )
 
-    await update.message.reply_text(
-        "✅ Richiesta inviata.\nRiceverai qui le info per procedere.",
-        reply_markup=user_after_request_menu()
-    )
+        await update.message.reply_text(
+            "✅ Richiesta inviata.\nRiceverai qui le info per procedere.",
+            reply_markup=user_after_request_menu()
+        )
+        return
+
+    # Se scrive a caso fuori flusso: rimandalo al menu
+    await update.message.reply_text("👇 Usa il menu per continuare.", reply_markup=main_menu())
 
 # ---------------- USER MEDIA (richiesta o ricevuta) ----------------
 async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -473,6 +528,7 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
+    # 4) Media fuori contesto
     await update.message.reply_text(
         "📎 Ho ricevuto il file.\n\n"
         "Se è una ricevuta: usa il bottone “📎 INVIA RICEVUTA” solo quando te lo chiedo.\n"
@@ -483,14 +539,15 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 app = Application.builder().token(BOT_TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("menu", menu_cmd))
 app.add_handler(CommandHandler("cancel", cancel_cmd))
 app.add_handler(CallbackQueryHandler(button_handler))
 
 # Admin outgoing verso target (solo admin)
 app.add_handler(MessageHandler(filters.User(ADMIN_ID) & ~filters.COMMAND, admin_outgoing_handler), group=0)
 
-# User testo richiesta
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_request_text_handler), group=1)
+# User testo (richiesta / problema / fallback menu)
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_text_handler), group=1)
 
 # User media (ricevute / richieste)
 app.add_handler(MessageHandler(
@@ -566,4 +623,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
 
