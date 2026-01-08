@@ -113,7 +113,6 @@ BUY_AFTER_PAID_TEXT = (
 
 BUY_REJECT_TEXT = (
     "⚠️ Non riesco a verificare il pagamento.\n\n"
-    "Controlla che sia *Completato* e che l’importo sia corretto.\n"
     "📎 Premi il bottone qui sotto e inviami la ricevuta (screenshot o PDF) ✅"
 )
 
