@@ -96,7 +96,6 @@ WELCOME_VIP_TEXT = (
     "Scrivimi pure non vedo l'ora di conoscerti. 😽"
 )
 
-# Ricevuta: richiesta SOLO se non trovi pagamento
 VIP_REJECT_TEXT = (
     "⚠️ Non riesco a trovare il pagamento.\n\n"
     "Ricontrolla per favore:\n"
@@ -204,7 +203,6 @@ def format_user_block(user) -> str:
     return f"👤 {name}" if name else "👤 (no name)"
 
 def reset_user_state(context: ContextTypes.DEFAULT_TYPE):
-    # Resetta tutte le modalità utente (così funziona sempre anche “la seconda volta”)
     context.user_data.pop("awaiting_request", None)
     context.user_data.pop("request_mode", None)
     context.user_data.pop("awaiting_vip_receipt", None)
@@ -247,9 +245,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "problem":
         reset_user_state(context)
         context.user_data["awaiting_problem"] = True
-        await query.edit_message_text(PROBLEM_INTRO_TEXT, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Menu", callback_data="back")]
-        ]))
+        await query.edit_message_text(
+            PROBLEM_INTRO_TEXT,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Menu", callback_data="back")]])
+        )
 
     elif data == "vip_paid":
         user = query.from_user
@@ -290,7 +289,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(BUY_AFTER_PAID_TEXT)
 
     elif data == "vip_receipt":
-        # Questo bottone viene mostrato SOLO quando l’admin non trova il pagamento
         reset_user_state(context)
         context.user_data["awaiting_vip_receipt"] = True
         await query.edit_message_text(
@@ -300,12 +298,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "buy_receipt":
-        # Questo bottone viene mostrato SOLO quando l’admin non trova il pagamento
         reset_user_state(context)
         context.user_data["awaiting_buy_receipt"] = True
         await query.edit_message_text(
             "📎 INVIA RICEVUTA (CONTENUTI)\n\n"
-            "Mandami ora uno screenshot o un PDF del pagamento.\n"
+            "Mandmi ora uno screenshot o un PDF del pagamento.\n"
             "Assicurati che si vedano: importo, data e stato *Completato* ✅"
         )
 
@@ -390,7 +387,7 @@ async def admin_outgoing_handler(update: Update, context: ContextTypes.DEFAULT_T
     )
     await update.message.reply_text("✅ Inviato all’utente.")
 
-# ---------------- USER REQUEST / PROBLEM (testo) ----------------
+# ---------------- USER TEXT (request/problem) ----------------
 async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1) Segnalazione problema
     if context.user_data.get("awaiting_problem"):
@@ -442,10 +439,9 @@ async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Se scrive a caso fuori flusso: rimandalo al menu
     await update.message.reply_text("👇 Usa il menu per continuare.", reply_markup=main_menu())
 
-# ---------------- USER MEDIA (richiesta o ricevuta) ----------------
+# ---------------- USER MEDIA (request/receipt) ----------------
 async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -527,7 +523,6 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    # 4) Media fuori contesto
     await update.message.reply_text(
         "📎 Ho ricevuto il file.\n\n"
         "Se è una ricevuta: usa il bottone “📎 INVIA RICEVUTA” solo quando te lo chiedo.\n"
@@ -545,10 +540,10 @@ app.add_handler(CallbackQueryHandler(button_handler))
 # Admin outgoing verso target (solo admin)
 app.add_handler(MessageHandler(filters.User(ADMIN_ID) & ~filters.COMMAND, admin_outgoing_handler), group=0)
 
-# User testo (richiesta / problema / fallback menu)
+# User testo
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_text_handler), group=1)
 
-# User media (ricevute / richieste)
+# User media
 app.add_handler(MessageHandler(
     (filters.PHOTO | filters.VIDEO | filters.VOICE | filters.Document.ALL) & ~filters.COMMAND,
     user_media_handler
@@ -622,5 +617,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
 
