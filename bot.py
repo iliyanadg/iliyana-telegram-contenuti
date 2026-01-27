@@ -241,34 +241,105 @@ def reset_user_state(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting_buy_receipt", None)
     context.user_data.pop("awaiting_problem", None)
 
-# --- VIP helpers (new) ---
+# --- VIP helpers (FIX: 1 utente = 1 riga, stesso codice, renew_count ++) ---
 def generate_vip_code() -> str:
     chars = string.ascii_uppercase + string.digits
     return "VIP-" + "".join(secrets.choice(chars) for _ in range(6))
 
-def save_vip_user(chat_id: int, username: str, vip_code: str):
+def _safe_int(val, default=0):
+    try:
+        return int(str(val).strip())
+    except Exception:
+        return default
+
+def find_vip_row(chat_id: int):
     """
-    Salva l'utente VIP su Google Sheets (se configurato).
-    Struttura riga identica al bot attuale.
+    Cerca riga per telegram_id (colonna G).
+    Ritorna: row_index (1-based) oppure None
     """
     if sheet is None:
-        return
+        return None
+    try:
+        # Colonna G = 7
+        col_vals = sheet.col_values(7)
+        target = str(chat_id)
+        # se hai intestazione, è in riga 1: ok lo saltiamo automaticamente perche' non matcha
+        for i, v in enumerate(col_vals, start=1):
+            if str(v).strip() == target:
+                return i
+    except Exception as e:
+        print("⚠️ Errore find_vip_row:", e)
+    return None
+
+def upsert_vip_user(chat_id: int, username: str):
+    """
+    Se esiste riga per chat_id:
+      - NON cambia VIP_CODE (col E)
+      - aggiorna date/orario/status/utente link/username/source
+      - renew_count (col J) += 1
+    Se NON esiste:
+      - crea nuova riga con vip_code nuovo, renew_count=1
+    Ritorna vip_code usato.
+    """
+    if sheet is None:
+        # fallback: comunque ritorna un codice, ma non salva
+        return generate_vip_code()
 
     now = datetime.now()
     expiry = now + timedelta(days=30)
 
-    sheet.append_row([
-        f"https://t.me/{username}" if username else "",
-        now.strftime("%Y-%m-%d"),
-        expiry.strftime("%Y-%m-%d"),
-        now.strftime("%H:%M"),
-        vip_code,
-        "ACTIVE",
-        str(chat_id),
-        username or "",
-        "telegram",
-        1
-    ])
+    user_link = f"https://t.me/{username}" if username else ""
+    date_ab = now.strftime("%Y-%m-%d")
+    date_sc = expiry.strftime("%Y-%m-%d")
+    orario = now.strftime("%H:%M")
+
+    row = find_vip_row(chat_id)
+
+    if row is None:
+        vip_code = generate_vip_code()
+        sheet.append_row([
+            user_link,            # A UTENTE
+            date_ab,              # B DATA_ABBONAMENTO
+            date_sc,              # C DATA_SCADENZA
+            orario,               # D ORARIO
+            vip_code,             # E VIP_CODE
+            "ACTIVE",             # F STATUS
+            str(chat_id),         # G telegram_id
+            username or "",       # H telegram_username
+            "telegram",           # I source
+            1                     # J renew_count
+        ])
+        return vip_code
+
+    # Esiste: leggi VIP_CODE e renew_count attuali
+    try:
+        vip_code = (sheet.cell(row, 5).value or "").strip()  # E
+        if not vip_code:
+            vip_code = generate_vip_code()  # se per qualche motivo è vuoto
+        renew_current = _safe_int(sheet.cell(row, 10).value, default=0)  # J
+        renew_new = renew_current + 1
+
+        # Aggiorna A..J (una sola call batch)
+        sheet.update(
+            range_name=f"A{row}:J{row}",
+            values=[[
+                user_link,          # A
+                date_ab,            # B
+                date_sc,            # C
+                orario,             # D
+                vip_code,           # E (stesso)
+                "ACTIVE",           # F
+                str(chat_id),       # G
+                username or "",     # H
+                "telegram",         # I
+                renew_new           # J
+            ]]
+        )
+        return vip_code
+    except Exception as e:
+        print("⚠️ Errore upsert_vip_user:", e)
+        # fallback: manda comunque un codice
+        return generate_vip_code()
 
 # ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -323,7 +394,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{format_user_block(user)}\n"
                 f"🆔 Chat ID: {chat_id}\n\n"
                 "Controlla PayPal:\n"
-                "✅ CONFERMA PAGAMENTO se lo trovi (ATTIVA VIP + salva in Sheets)\n"
+                "✅ CONFERMA PAGAMENTO se lo trovi (ATTIVA VIP + aggiorna Sheets)\n"
                 "❌ NON TROVO PAGAMENTO se non lo trovi (in quel caso chiederò ricevuta all’utente)"
             ),
             reply_markup=admin_vip_actions(chat_id)
@@ -394,28 +465,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         target_chat = int(data.split(":", 1)[1])
 
-        # NEW: genera codice + salva su Sheets + manda welcome con codice/link
+        # Recupero username dal profilo Telegram (se c’è)
         try:
             chat = await context.bot.get_chat(target_chat)
             username = chat.username or ""
         except Exception:
             username = ""
 
-        vip_code = generate_vip_code()
+        # ✅ FIX: 1 riga per utente, stesso codice, renew_count ++
+        try:
+            vip_code = upsert_vip_user(target_chat, username)
+        except Exception as e:
+            print("⚠️ Errore upsert VIP:", e)
+            vip_code = generate_vip_code()
 
         await context.bot.send_message(chat_id=target_chat, text=build_welcome_vip_text(vip_code))
-
-        # salva su Sheets (se configurato)
-        try:
-            save_vip_user(target_chat, username, vip_code)
-        except Exception as e:
-            # non bloccare: segnala solo in log
-            print("⚠️ Errore salvataggio VIP su Sheets:", e)
 
         await query.message.reply_text(
             f"✅ VIP confermato e benvenuto inviato a: {target_chat}\n"
             f"🔐 Codice: {vip_code}\n"
-            f"{'🧾 Salvato su Sheets ✅' if sheet is not None else '🧾 Sheets non configurato (skippato)'}"
+            f"{'🧾 Aggiornato su Sheets ✅' if sheet is not None else '🧾 Sheets non configurato (skippato)'}"
         )
 
     elif data.startswith("vip_reject:"):
