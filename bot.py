@@ -19,13 +19,13 @@ from telegram.ext import (
 # ================= ENV =================
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ADMIN_ID = int(os.environ["ADMIN_ID"])
-WEBHOOK_URL = os.environ["WEBHOOK_URL"].rstrip("/")  # importante
+WEBHOOK_URL = os.environ["WEBHOOK_URL"].rstrip("/")
 PORT = int(os.environ.get("PORT", "10000"))
 
 MY_CONTACT = os.environ.get("MY_CONTACT", "@iliyanadg")
 VIP_SITE_URL = os.environ.get("VIP_SITE_URL", "https://vip-access.pages.dev/")
 
-PAYPAL_VIP_URL = "https://www.paypal.com/paypalme/iliyanadg/4"
+PAYPAL_VIP_URL = os.environ.get("PAYPAL_VIP_URL", "https://www.paypal.com/paypalme/iliyanadg/4")
 
 # ================= GOOGLE SHEETS =================
 gc = gspread.service_account_from_dict(
@@ -33,37 +33,41 @@ gc = gspread.service_account_from_dict(
 )
 sheet = gc.open("VIP_ACCESS").worksheet("VIP_ACCESS")
 
+# ================= IN-MEMORY STORE (pending VIP requests) =================
+# chiave: chat_id utente, valore: dict con info utente
+PENDING_VIP = {}
+
 # ================= UTIL =================
-def generate_vip_code():
+def generate_vip_code() -> str:
     chars = string.ascii_uppercase + string.digits
     return "VIP-" + "".join(secrets.choice(chars) for _ in range(6))
 
-def save_vip_user(user_data: dict, chat_id: int, vip_code: str):
+def save_vip_user(user_info: dict, chat_id: int, vip_code: str):
     now = datetime.now()
     expiry = now + timedelta(days=30)
 
-    username = user_data.get("username") or ""
-    tg_link = f"https://t.me/{username}" if username else ""
+    username = user_info.get("username") or ""
+    tme = f"https://t.me/{username}" if username else ""
 
     sheet.append_row([
-        tg_link,                          # UTENTE (link)
-        now.strftime("%Y-%m-%d"),         # DATA_ABBONAMENTO
-        expiry.strftime("%Y-%m-%d"),      # DATA_SCADENZA
-        now.strftime("%H:%M"),            # ORARIO
-        vip_code,                         # VIP_CODE
-        "ACTIVE",                         # STATUS
-        chat_id,                          # telegram_id
-        username,                         # telegram_username
-        "telegram",                       # source
-        1                                 # renew_count
+        tme,                             # UTENTE
+        now.strftime("%Y-%m-%d"),        # DATA_ABBONAMENTO
+        expiry.strftime("%Y-%m-%d"),     # DATA_SCADENZA
+        now.strftime("%H:%M"),           # ORARIO
+        vip_code,                        # VIP_CODE
+        "ACTIVE",                        # STATUS
+        str(chat_id),                    # telegram_id
+        username,                        # telegram_username
+        "telegram",                      # source
+        1                                # renew_count
     ])
 
 def vip_welcome_message(vip_code: str) -> str:
     return (
         "💎 *BENVENUTO NEL VIP ACCESS*\n\n"
-        "Ora puoi scrivermi direttamente:\n"
+        "Da ora puoi scrivermi direttamente qui:\n"
         f"👉 {MY_CONTACT}\n\n"
-        "⏳ *Durata accesso:* 30 giorni\n\n"
+        "⏳ *Accesso valido 30 giorni*\n\n"
         "🌐 *AREA VIP*\n"
         f"Accedi qui: {VIP_SITE_URL}\n\n"
         "🔐 *IL TUO CODICE VIP PERSONALE*\n"
@@ -104,10 +108,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
+    # USER
     if data == "vip":
         await query.edit_message_text(
-            "💎 VIP ACCESS\nPrezzo: 4€/mese\n\nProcedi dal link:",
-            reply_markup=vip_menu()
+            "💎 *VIP ACCESS*\nPrezzo: 4€/mese\n\nProcedi dal link qui sotto 👇",
+            reply_markup=vip_menu(),
+            parse_mode="Markdown"
         )
 
     elif data == "back":
@@ -120,75 +126,62 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = query.from_user
         chat_id = query.message.chat_id
 
-        # ✅ Salviamo i dati dell'utente in pending (così l'admin li recupera dopo)
-        pending = context.application.bot_data.setdefault("vip_pending", {})
-        pending[chat_id] = {
-            "id": user.id,
+        # Salvo info utente in memoria (così l’admin può confermare dopo)
+        PENDING_VIP[chat_id] = {
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "username": user.username or "",
         }
 
-        display_name = (user.first_name or "") + (f" {user.last_name}" if user.last_name else "")
-        uname = f"@{user.username}" if user.username else "(no username)"
-
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=(
-                "💎 RICHIESTA VIP — UTENTE HA PREMUTO “HO PAGATO”\n\n"
-                f"👤 {display_name}\n"
-                f"🔗 {uname}\n"
+                "💎 *RICHIESTA VIP*\n\n"
+                f"👤 {user.first_name or ''} {user.last_name or ''}\n"
+                f"🔗 @{user.username}\n" if user.username else ""
                 f"🆔 Chat ID: {chat_id}\n\n"
-                "Quando hai verificato PayPal, premi CONFERMA PAGAMENTO."
+                "Premi *CONFERMA PAGAMENTO* quando hai verificato PayPal."
             ),
-            reply_markup=admin_vip_actions(chat_id)
+            reply_markup=admin_vip_actions(chat_id),
+            parse_mode="Markdown"
         )
 
-        await query.edit_message_text("✅ Perfetto.\nSto verificando il pagamento 💎")
+        await query.edit_message_text(
+            "✅ Perfetto.\nSto verificando il pagamento 💎"
+        )
 
+    # ADMIN
     elif data.startswith("vip_confirm:"):
         if query.from_user.id != ADMIN_ID:
             return
 
-        target_chat = int(data.split(":")[1])
-
-        pending = context.application.bot_data.get("vip_pending", {})
-        user_data = pending.get(target_chat)
-
-        if not user_data:
-            await query.message.reply_text(
-                "⚠️ Non trovo i dati dell’utente in pending.\n"
-                "Fagli ripremere “HO PAGATO” così mi arriva di nuovo la richiesta."
-            )
-            return
+        target_chat_id = int(data.split(":", 1)[1])
+        user_info = PENDING_VIP.get(target_chat_id, {"username": ""})
 
         vip_code = generate_vip_code()
 
-        # 1) invio messaggio VIP all'utente
         await context.bot.send_message(
-            chat_id=target_chat,
+            chat_id=target_chat_id,
             text=vip_welcome_message(vip_code),
             parse_mode="Markdown"
         )
 
-        # 2) salvo su Google Sheet
-        save_vip_user(user_data, target_chat, vip_code)
+        save_vip_user(user_info, target_chat_id, vip_code)
 
-        # 3) conferma all'admin
-        await query.message.reply_text(f"✅ VIP ATTIVATO\nCodice: {vip_code}\nChat: {target_chat}")
-
-        # 4) rimuovo pending
-        pending.pop(target_chat, None)
+        await query.message.reply_text(
+            f"✅ VIP ATTIVATO per {target_chat_id}\nCodice: {vip_code}"
+        )
 
     elif data.startswith("vip_reject:"):
         if query.from_user.id != ADMIN_ID:
             return
-        target_chat = int(data.split(":")[1])
+
+        target_chat_id = int(data.split(":", 1)[1])
         await context.bot.send_message(
-            chat_id=target_chat,
-            text="⚠️ Non trovo il pagamento.\nMandami la ricevuta PayPal (screenshot o PDF) qui in chat ✅"
+            chat_id=target_chat_id,
+            text="⚠️ Non trovo il pagamento. Inviami la ricevuta PayPal (screenshot o PDF) ✅"
         )
-        await query.message.reply_text(f"❌ Ho chiesto la ricevuta a: {target_chat}")
+        await query.message.reply_text(f"❌ Ho chiesto ricevuta a: {target_chat_id}")
 
 # ================= WEBHOOK =================
 app = Application.builder().token(BOT_TOKEN).build()
