@@ -25,10 +25,9 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 MY_CONTACT = os.environ.get("MY_CONTACT", "@iliyanadg")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # es: https://iliyana-telegram-contenuti-1.onrender.com
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 PORT = int(os.environ.get("PORT", "10000"))
 
-# opzionali per VIP area
 VIP_SITE_URL = os.environ.get("VIP_SITE_URL", "https://vip-access.pages.dev/")
 
 if not BOT_TOKEN:
@@ -43,22 +42,39 @@ PAYPAL_VIP_URL = "https://www.paypal.com/paypalme/iliyanadg/4"
 PAYPAL_CONTENT_URL = "https://www.paypal.com/paypalme/iliyanadg"  # importo variabile
 
 # ---------------- GOOGLE SHEETS (VIP) ----------------
-# Variabile su Render: GOOGLE_SERVICE_ACCOUNT_JSON
 SERVICE_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
 SHEET_NAME = os.environ.get("SHEET_NAME", "VIP_ACCESS")
 WORKSHEET_NAME = os.environ.get("WORKSHEET_NAME", "VIP_ACCESS")
 
 sheet = None
-if SERVICE_JSON:
-    try:
-        gc = gspread.service_account_from_dict(json.loads(SERVICE_JSON))
-        sheet = gc.open(SHEET_NAME).worksheet(WORKSHEET_NAME)
-    except Exception as e:
-        # Non blocchiamo il bot: se Sheets non è configurato bene, il bot continua a funzionare
-        print("⚠️ Errore Google Sheets:", e)
-        sheet = None
+try:
+    gc = gspread.service_account_from_dict(json.loads(SERVICE_JSON))
+    sheet = gc.open(SHEET_NAME).worksheet(WORKSHEET_NAME)
+except Exception as e:
+    # blocco voluto: se vuoi VIP + renew_count, Sheets deve funzionare
+    raise RuntimeError(f"Errore Google Sheets: {e}")
 
-# ---------------- TESTI (AGGIORNATI) ----------------
+# Colonne sheet (1-indexed)
+# A telegram_link
+# B start_date
+# C expiry_date
+# D time
+# E vip_code
+# F status
+# G chat_id
+# H username
+# I source
+# J renew_count
+CHAT_ID_COL = 7
+START_COL = 2
+EXPIRY_COL = 3
+TIME_COL = 4
+CODE_COL = 5
+STATUS_COL = 6
+USERNAME_COL = 8
+RENEW_COL = 10
+
+# ---------------- TESTI ----------------
 WELCOME_TEXT = (
     "Hey… sei arrivato nel posto giusto 😈\n"
     "Adesso scegli bene 😽\n\n"
@@ -67,7 +83,6 @@ WELCOME_TEXT = (
     "Scegli qui sotto 👇"
 )
 
-# 🔒 NON-VIP: pacchetti + regole chiare (NO cam, NO chat)
 PRICING_TEXT = (
     "🔒 ACQUISTA CONTENUTI\n\n"
     "📷 PACCHETTI (contenuti registrati)\n"
@@ -87,7 +102,6 @@ PRICING_TEXT = (
     "✅ Solo contenuti registrati"
 )
 
-# 💎 VIP: contatto diretto; sex chat NON inclusa (extra); cam SOLO VIP (extra)
 VIP_TEXT = (
     "💎 VIP ACCESS\n\n"
     "Uno spazio più intimo e riservato:\n"
@@ -113,21 +127,6 @@ VIP_AFTER_PAID_TEXT = (
     "Ho ricevuto la tua richiesta VIP.\n"
     "Appena verifico il pagamento, riceverai qui il mio contatto diretto 💎"
 )
-
-# aggiornato: include codice + link VIP
-def build_welcome_vip_text(vip_code: str) -> str:
-    return (
-        "💎 Benvenuto nel VIP Access\n\n"
-        "Da ora puoi scrivermi direttamente qui:\n"
-        f"👉 {MY_CONTACT}\n\n"
-        "⏳ Accesso valido 30 giorni.\n\n"
-        "🌐 AREA VIP:\n"
-        f"{VIP_SITE_URL}\n\n"
-        "🔐 CODICE VIP PERSONALE:\n"
-        f"{vip_code}\n\n"
-        "⚠️ Il codice è personale e non va condiviso.\n"
-        "Scrivimi pure non vedo l'ora di conoscerti. 😽"
-    )
 
 VIP_REJECT_TEXT = (
     "⚠️ Non riesco a trovare il pagamento.\n\n"
@@ -167,6 +166,84 @@ PROBLEM_THANKS_TEXT = (
     "✅ Segnalazione inviata.\n"
     "Controllo appena possibile."
 )
+
+# ---------------- VIP helpers ----------------
+def generate_vip_code() -> str:
+    chars = string.ascii_uppercase + string.digits
+    return "VIP-" + "".join(secrets.choice(chars) for _ in range(6))
+
+def build_welcome_vip_text(vip_code: str) -> str:
+    return (
+        "💎 Benvenuto nel VIP Access\n\n"
+        "Da ora puoi scrivermi direttamente qui:\n"
+        f"👉 {MY_CONTACT}\n\n"
+        "⏳ Accesso valido 30 giorni.\n\n"
+        "🌐 AREA VIP:\n"
+        f"{VIP_SITE_URL}\n\n"
+        "🔐 CODICE VIP PERSONALE:\n"
+        f"{vip_code}\n\n"
+        "⚠️ Il codice è personale e non va condiviso.\n"
+        "Scrivimi pure non vedo l'ora di conoscerti. 😽"
+    )
+
+def _now_and_expiry():
+    now = datetime.now()
+    expiry = now + timedelta(days=30)
+    return now, expiry
+
+def find_row_by_chat_id(chat_id: int):
+    try:
+        cell = sheet.find(str(chat_id), in_column=CHAT_ID_COL)
+        return cell.row if cell else None
+    except Exception as e:
+        print("⚠️ Sheets find error:", e)
+        return None
+
+def upsert_vip_user(chat_id: int, username: str):
+    """
+    1 riga per utente (chat_id in colonna G)
+    - se esiste: update + renew_count +1, codice invariato
+    - se non esiste: append, renew_count=1, codice nuovo
+    """
+    row = find_row_by_chat_id(chat_id)
+    now, expiry = _now_and_expiry()
+
+    if row:
+        existing_code = (sheet.cell(row, CODE_COL).value or "").strip()
+        if not existing_code:
+            existing_code = generate_vip_code()
+
+        current_rc = (sheet.cell(row, RENEW_COL).value or "").strip()
+        try:
+            rc_int = int(current_rc) if current_rc else 1
+        except:
+            rc_int = 1
+        new_rc = rc_int + 1
+
+        sheet.update_cell(row, START_COL, now.strftime("%Y-%m-%d"))
+        sheet.update_cell(row, EXPIRY_COL, expiry.strftime("%Y-%m-%d"))
+        sheet.update_cell(row, TIME_COL, now.strftime("%H:%M"))
+        sheet.update_cell(row, STATUS_COL, "ACTIVE")
+        sheet.update_cell(row, USERNAME_COL, username or "")
+        sheet.update_cell(row, RENEW_COL, str(new_rc))
+        sheet.update_cell(row, CODE_COL, existing_code)
+
+        return existing_code, new_rc, False
+
+    code = generate_vip_code()
+    sheet.append_row([
+        f"https://t.me/{username}" if username else "",
+        now.strftime("%Y-%m-%d"),
+        expiry.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M"),
+        code,
+        "ACTIVE",
+        str(chat_id),
+        username or "",
+        "telegram",
+        1
+    ])
+    return code, 1, True
 
 # ---------------- UI ----------------
 def main_menu():
@@ -241,106 +318,6 @@ def reset_user_state(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting_buy_receipt", None)
     context.user_data.pop("awaiting_problem", None)
 
-# --- VIP helpers (FIX: 1 utente = 1 riga, stesso codice, renew_count ++) ---
-def generate_vip_code() -> str:
-    chars = string.ascii_uppercase + string.digits
-    return "VIP-" + "".join(secrets.choice(chars) for _ in range(6))
-
-def _safe_int(val, default=0):
-    try:
-        return int(str(val).strip())
-    except Exception:
-        return default
-
-def find_vip_row(chat_id: int):
-    """
-    Cerca riga per telegram_id (colonna G).
-    Ritorna: row_index (1-based) oppure None
-    """
-    if sheet is None:
-        return None
-    try:
-        # Colonna G = 7
-        col_vals = sheet.col_values(7)
-        target = str(chat_id)
-        # se hai intestazione, è in riga 1: ok lo saltiamo automaticamente perche' non matcha
-        for i, v in enumerate(col_vals, start=1):
-            if str(v).strip() == target:
-                return i
-    except Exception as e:
-        print("⚠️ Errore find_vip_row:", e)
-    return None
-
-def upsert_vip_user(chat_id: int, username: str):
-    """
-    Se esiste riga per chat_id:
-      - NON cambia VIP_CODE (col E)
-      - aggiorna date/orario/status/utente link/username/source
-      - renew_count (col J) += 1
-    Se NON esiste:
-      - crea nuova riga con vip_code nuovo, renew_count=1
-    Ritorna vip_code usato.
-    """
-    if sheet is None:
-        # fallback: comunque ritorna un codice, ma non salva
-        return generate_vip_code()
-
-    now = datetime.now()
-    expiry = now + timedelta(days=30)
-
-    user_link = f"https://t.me/{username}" if username else ""
-    date_ab = now.strftime("%Y-%m-%d")
-    date_sc = expiry.strftime("%Y-%m-%d")
-    orario = now.strftime("%H:%M")
-
-    row = find_vip_row(chat_id)
-
-    if row is None:
-        vip_code = generate_vip_code()
-        sheet.append_row([
-            user_link,            # A UTENTE
-            date_ab,              # B DATA_ABBONAMENTO
-            date_sc,              # C DATA_SCADENZA
-            orario,               # D ORARIO
-            vip_code,             # E VIP_CODE
-            "ACTIVE",             # F STATUS
-            str(chat_id),         # G telegram_id
-            username or "",       # H telegram_username
-            "telegram",           # I source
-            1                     # J renew_count
-        ])
-        return vip_code
-
-    # Esiste: leggi VIP_CODE e renew_count attuali
-    try:
-        vip_code = (sheet.cell(row, 5).value or "").strip()  # E
-        if not vip_code:
-            vip_code = generate_vip_code()  # se per qualche motivo è vuoto
-        renew_current = _safe_int(sheet.cell(row, 10).value, default=0)  # J
-        renew_new = renew_current + 1
-
-        # Aggiorna A..J (una sola call batch)
-        sheet.update(
-            range_name=f"A{row}:J{row}",
-            values=[[
-                user_link,          # A
-                date_ab,            # B
-                date_sc,            # C
-                orario,             # D
-                vip_code,           # E (stesso)
-                "ACTIVE",           # F
-                str(chat_id),       # G
-                username or "",     # H
-                "telegram",         # I
-                renew_new           # J
-            ]]
-        )
-        return vip_code
-    except Exception as e:
-        print("⚠️ Errore upsert_vip_user:", e)
-        # fallback: manda comunque un codice
-        return generate_vip_code()
-
 # ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_user_state(context)
@@ -394,8 +371,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{format_user_block(user)}\n"
                 f"🆔 Chat ID: {chat_id}\n\n"
                 "Controlla PayPal:\n"
-                "✅ CONFERMA PAGAMENTO se lo trovi (ATTIVA VIP + aggiorna Sheets)\n"
-                "❌ NON TROVO PAGAMENTO se non lo trovi (in quel caso chiederò ricevuta all’utente)"
+                "✅ CONFERMA PAGAMENTO se lo trovi (ATTIVA/RINNOVA VIP + aggiorna Sheets)\n"
+                "❌ NON TROVO PAGAMENTO se non lo trovi (chiederò ricevuta)"
             ),
             reply_markup=admin_vip_actions(chat_id)
         )
@@ -414,7 +391,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🆔 Chat ID: {chat_id}\n\n"
                 "Controlla PayPal:\n"
                 "✅ PAGAMENTO OK se lo trovi\n"
-                "❌ NON TROVO PAGAMENTO se non lo trovi (in quel caso chiederò ricevuta all’utente)"
+                "❌ NON TROVO PAGAMENTO se non lo trovi (in quel caso chiederò ricevuta)"
             ),
             reply_markup=admin_buy_actions(chat_id)
         )
@@ -463,28 +440,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("vip_confirm:"):
         if query.from_user.id != ADMIN_ID:
             return
+
         target_chat = int(data.split(":", 1)[1])
 
-        # Recupero username dal profilo Telegram (se c’è)
+        # username dal profilo Telegram (se non c'è, stringa vuota)
         try:
             chat = await context.bot.get_chat(target_chat)
             username = chat.username or ""
         except Exception:
             username = ""
 
-        # ✅ FIX: 1 riga per utente, stesso codice, renew_count ++
-        try:
-            vip_code = upsert_vip_user(target_chat, username)
-        except Exception as e:
-            print("⚠️ Errore upsert VIP:", e)
-            vip_code = generate_vip_code()
+        vip_code, renew_count, is_new = upsert_vip_user(target_chat, username)
 
-        await context.bot.send_message(chat_id=target_chat, text=build_welcome_vip_text(vip_code))
+        await context.bot.send_message(
+            chat_id=target_chat,
+            text=build_welcome_vip_text(vip_code)
+        )
 
         await query.message.reply_text(
-            f"✅ VIP confermato e benvenuto inviato a: {target_chat}\n"
+            f"✅ VIP {'ATTIVATO' if is_new else 'RINNOVATO'} per: {target_chat}\n"
             f"🔐 Codice: {vip_code}\n"
-            f"{'🧾 Aggiornato su Sheets ✅' if sheet is not None else '🧾 Sheets non configurato (skippato)'}"
+            f"🔁 Renew count: {renew_count}"
         )
 
     elif data.startswith("vip_reject:"):
@@ -541,7 +517,6 @@ async def admin_outgoing_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 # ---------------- USER TEXT (request/problem) ----------------
 async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 1) Segnalazione problema
     if context.user_data.get("awaiting_problem"):
         context.user_data["awaiting_problem"] = False
 
@@ -565,7 +540,6 @@ async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(PROBLEM_THANKS_TEXT, reply_markup=user_after_request_menu())
         return
 
-    # 2) Richiesta contenuti (testo)
     if context.user_data.get("awaiting_request"):
         context.user_data["awaiting_request"] = False
         mode = context.user_data.get("request_mode", "new")
@@ -598,7 +572,6 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     chat_id = update.effective_chat.id
 
-    # 1) Ricevuta VIP
     if context.user_data.get("awaiting_vip_receipt"):
         context.user_data["awaiting_vip_receipt"] = False
 
@@ -623,7 +596,6 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("✅ Ricevuta ricevuta. Sto verificando 💎")
         return
 
-    # 2) Ricevuta contenuti
     if context.user_data.get("awaiting_buy_receipt"):
         context.user_data["awaiting_buy_receipt"] = False
 
@@ -646,7 +618,6 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("✅ Ricevuta ricevuta. Controllo e ti rispondo 🔒")
         return
 
-    # 3) Media come richiesta contenuto
     if context.user_data.get("awaiting_request"):
         context.user_data["awaiting_request"] = False
         mode = context.user_data.get("request_mode", "new")
@@ -689,13 +660,8 @@ app.add_handler(CommandHandler("menu", menu_cmd))
 app.add_handler(CommandHandler("cancel", cancel_cmd))
 app.add_handler(CallbackQueryHandler(button_handler))
 
-# Admin outgoing verso target (solo admin)
 app.add_handler(MessageHandler(filters.User(ADMIN_ID) & ~filters.COMMAND, admin_outgoing_handler), group=0)
-
-# User testo
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_text_handler), group=1)
-
-# User media
 app.add_handler(MessageHandler(
     (filters.PHOTO | filters.VIDEO | filters.VOICE | filters.Document.ALL) & ~filters.COMMAND,
     user_media_handler
