@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import gspread
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest  # ✅ MODIFICA 1: aggiunto
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -329,7 +330,13 @@ async def menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+
+    # ✅ MODIFICA 2: non far crashare se il callback è scaduto (Render sleep / ritardo)
+    try:
+        await query.answer()
+    except BadRequest:
+        pass
+
     data = query.data
 
     # -------- MENU USER --------
@@ -654,6 +661,15 @@ async def user_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ---------------- WEBHOOK SERVER (Render) ----------------
 app = Application.builder().token(BOT_TOKEN).build()
+
+# ✅ MODIFICA 3: error handler (così vedi i problemi nei log invece di “silenzio”)
+import logging
+logger = logging.getLogger(__name__)
+
+async def error_handler(update, context):
+    logger.exception("Update error:", exc_info=context.error)
+
+app.add_error_handler(error_handler)
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("menu", menu_cmd))
